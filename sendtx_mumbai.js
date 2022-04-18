@@ -67,7 +67,7 @@ async function sendTx(){
     const signer = web3.eth.accounts.privateKeyToAccount(
         process.env.SIGNER_PRIVATE_KEY
     );
-    const balance = await web3.eth.getBalance(signer.address); // in wei  
+    const balance = await web3.eth.getBalance(signer.address); //in wei  
 
     if(balance*(10**(-18)) < parseFloat(process.env.BALANCE_ALERT_CONDITION_IN_MATIC))
     { 
@@ -85,9 +85,11 @@ async function sendTx(){
       PrevNonce = latestNonce
     }
 
+    // Calculate maxPriorityFeePerGas based on Fee History 
+    // https://web3js.readthedocs.io/en/v1.5.0/web3-eth.html#getfeehistory
     var maxPriorityFeePerGas; 
     await web3.eth.getFeeHistory(1, "latest", [25, 50, 75]).then((result)=>{
-      maxPriorityFeePerGas = web3.utils.toHex(Number(result.reward[0][1]).toString()) // wei 
+      maxPriorityFeePerGas = web3.utils.toHex(Number(result.reward[0][1]).toString()) //in wei 
     });
 
     //create value transfer transaction (EIP-1559) 
@@ -104,7 +106,7 @@ async function sendTx(){
     var RLPEncodedTx;
     await web3.eth.accounts.signTransaction(tx, process.env.SIGNER_PRIVATE_KEY)
     .then((result) => {
-      RLPEncodedTx = result.rawTransaction //- RLP encoded transaction & already HEX value
+      RLPEncodedTx = result.rawTransaction // RLP encoded transaction & already HEX value
       data.txhash = result.transactionHash // the transaction hash of the RLP encoded transaction.
     });
  

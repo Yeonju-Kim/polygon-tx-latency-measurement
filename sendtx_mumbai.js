@@ -3,8 +3,9 @@ const fs = require('fs')
 const AWS = require('aws-sdk')
 var parquet = require('parquetjs-lite')
 const moment = require('moment');
+require("dotenv").config();
 
-let rpc = "https://rpc-mumbai.matic.today";
+let rpc = process.env.PUBLIC_RPC_URL;
 const provider = new Web3.providers.HttpProvider(rpc);
 const web3 = new Web3(provider);
 
@@ -149,5 +150,4 @@ async function main(){
 
 }
 
-require("dotenv").config();
 main();

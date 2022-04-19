@@ -105,7 +105,7 @@ async function sendTx(){
     // https://web3js.readthedocs.io/en/v1.5.0/web3-eth.html#getfeehistory
     var maxPriorityFeePerGas; 
     await web3.eth.getFeeHistory(1, "latest", [25, 50, 75]).then((result)=>{
-      maxPriorityFeePerGas = web3.utils.toHex(Number(result.reward[0][1]).toString()) //in wei 
+      maxPriorityFeePerGas = web3.utils.toHex(Number(result.reward[0][0]).toString()) //in wei 
     });
 
     //create value transfer transaction (EIP-1559) 

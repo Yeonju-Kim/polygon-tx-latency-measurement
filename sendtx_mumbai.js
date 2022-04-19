@@ -87,9 +87,9 @@ async function sendTx(){
 
     if(balance*(10**(-18)) < parseFloat(process.env.BALANCE_ALERT_CONDITION_IN_MATIC))
     { 
-      sendSlackMsg(`Current balance of ${signer.address} is less than ${process.env.BALANCE_ALERT_CONDITION_IN_MATIC} MATIC! balance=${balance*(10**(-18))}`)
+      sendSlackMsg(`Current balance of <${process.env.SCOPE_URL}/address/${signer.address}|${signer.address}> is less than ${process.env.BALANCE_ALERT_CONDITION_IN_MATIC} MATIC! balance=${balance*(10**(-18))} MATIC`)
     }
-    
+
     const latestNonce = await web3.eth.getTransactionCount(signer.address)
     if (latestNonce == PrevNonce) 
     {

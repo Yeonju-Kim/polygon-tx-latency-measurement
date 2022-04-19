@@ -3,6 +3,8 @@ const fs = require('fs')
 const AWS = require('aws-sdk')
 var parquet = require('parquetjs-lite')
 const moment = require('moment');
+const axios = require('axios')
+
 require("dotenv").config();
 
 let rpc = process.env.PUBLIC_RPC_URL;
@@ -36,6 +38,19 @@ async function makeParquetFile(data) {
   writer.close()
 
   return filename;
+}
+
+async function sendSlackMsg(msg) {
+  axios.post(process.env.SLACK_API_URL, {
+      'channel':process.env.SLACK_CHANNEL,
+      'mrkdown':true,
+      'text':msg
+  }, {
+      headers: {
+          'Content-type':'application/json',
+          'Authorization':`Bearer ${process.env.SLACK_AUTH}`
+      }
+  })
 }
 
 async function uploadToS3(data){
@@ -72,7 +87,7 @@ async function sendTx(){
 
     if(balance*(10**(-18)) < parseFloat(process.env.BALANCE_ALERT_CONDITION_IN_MATIC))
     { 
-      console.log(`Current balance of ${addr} is less than ${process.env.BALANCE_ALERT_CONDITION_IN_MATIC} ! balance=${balance}`)
+      sendSlackMsg(`Current balance of ${signer.address} is less than ${process.env.BALANCE_ALERT_CONDITION_IN_MATIC} MATIC! balance=${balance*(10**(-18))}`)
     }
     
     const latestNonce = await web3.eth.getTransactionCount(signer.address)

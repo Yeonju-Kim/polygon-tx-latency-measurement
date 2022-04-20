@@ -101,12 +101,19 @@ async function sendTx(){
       PrevNonce = latestNonce
     }
 
-    // Calculate maxPriorityFeePerGas based on Fee History 
-    // https://web3js.readthedocs.io/en/v1.5.0/web3-eth.html#getfeehistory
     var maxPriorityFeePerGas; 
-    await web3.eth.getFeeHistory(1, "latest", [25, 50, 75]).then((result)=>{
-      maxPriorityFeePerGas = web3.utils.toHex(Number(result.reward[0][0]).toString()) //in wei 
+    var baseFee; 
+    // Option 1. Calculate maxPriorityFeePerGas based on Fee History 
+    // https://web3js.readthedocs.io/en/v1.5.0/web3-eth.html#getfeehistory
+    await web3.eth.getFeeHistory(3, "latest", [25, 50, 75]).then((result)=>{
+      baseFee = Number(result.baseFeePerGas[3])// expected base Fee value (in wei)
+      // const maxReward = Math.max(Number(result.reward[0][1]), Number(result.reward[1][1]), Number(result.reward[2][1]))
+      // maxPriorityFeePerGas = web3.utils.toHex(maxReward.toString())//in wei
     });
+
+    // Option 2. Calculate maxPriorityFeePerGas using equation: (gasPrice - baseFee)
+    const gasPrice = await web3.eth.getGasPrice()
+    maxPriorityFeePerGas = web3.utils.toHex((gasPrice - baseFee).toString())
 
     //create value transfer transaction (EIP-1559) 
     const tx = {

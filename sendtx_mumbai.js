@@ -3,13 +3,16 @@ const fs = require('fs')
 const AWS = require('aws-sdk')
 var parquet = require('parquetjs-lite')
 const moment = require('moment');
-const axios = require('axios')
+const axios = require('axios');
+const CoinGecko = require('coingecko-api');
+const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 
 require("dotenv").config();
 
 let rpc = process.env.PUBLIC_RPC_URL;
 const provider = new Web3.providers.HttpProvider(rpc);
 const web3 = new Web3(provider);
+const CoinGeckoClient = new CoinGecko(); 
 
 var PrevNonce = 0; 
 
@@ -21,14 +24,19 @@ async function makeParquetFile(data) {
       endTime:{type:'TIMESTAMP_MILLIS'},
       chainId:{type:'INT64'},
       latency:{type:'INT64'},
-      error:{type:'UTF8'}
+      error:{type:'UTF8'},
+      txFee:{type:'DOUBLE'},
+      txFeeInUSD:{type:'DOUBLE'},
+      latestBlockSize:{type:'INT64'},
+      numOfTxInLatestBlock:{type:'INT64'},
+      pingTime:{type:'INT64'}
   })
 
   var d = new Date()
   //20220101_032921
   var datestring = moment().format('YYYYMMDD_HHmmss')
 
-  var filename = `${datestring}.parquet`
+  var filename = `${datestring}_${data.chainId}.parquet`
 
   // create new ParquetWriter that writes to 'filename'
   var writer = await parquet.ParquetWriter.openFile(schema, filename);
@@ -67,6 +75,33 @@ async function uploadToS3(data){
   fs.unlinkSync(filename) 
 }
 
+async function ping(data) {
+  var started = new Date().getTime();
+  var http = new XMLHttpRequest();
+  http.open("GET", process.env.PUBLIC_RPC_URL, /*async*/true);
+  http.onreadystatechange = async ()=>{
+    if (http.readyState == http.DONE) {
+      var ended = new Date().getTime();
+      data.pingTime = ended - started;
+      try {
+        // measure ping time. then upload to s3 bucket 
+        await uploadToS3(data);
+      }
+      catch(err){
+        console.log('failed to s3.upload', err.toString())
+      }
+    }
+  };
+
+  try {
+    http.send(null);
+  } catch(err) {
+    console.log("failed to execute.", err.toString())
+    data.error = err.toString()
+    await uploadToS3(data);
+  }
+}
+
 async function sendTx(){
   var data = {
     executedAt: new Date().getTime(),
@@ -76,6 +111,11 @@ async function sendTx(){
     chainId: 0,
     latency:0,
     error:'',
+    txFee: 0.0, 
+    txFeeInUSD: 0.0, 
+    latestBlockSize: 0,
+    numOfTxInLatestBlock: 0,
+    pingTime:0 
   }
 
   try{
@@ -98,22 +138,33 @@ async function sendTx(){
     }
     else{
       console.log(`Nonce ${latestNonce} != ${PrevNonce}`)
-      PrevNonce = latestNonce
     }
+
+    await web3.eth.getBlock("latest").then((result)=>{
+      console.log(result)
+      data.latestBlockSize = result.gasUsed
+      data.numOfTxInLatestBlock = result.transactions.length
+    })
 
     var maxPriorityFeePerGas; 
     var baseFee; 
     // Option 1. Calculate maxPriorityFeePerGas based on Fee History 
     // https://web3js.readthedocs.io/en/v1.5.0/web3-eth.html#getfeehistory
-    await web3.eth.getFeeHistory(3, "latest", [25, 50, 75]).then((result)=>{
+    await web3.eth.getFeeHistory(10, "latest", [50]).then((result)=>{
       baseFee = Number(result.baseFeePerGas[3])// expected base Fee value (in wei)
-      // const maxReward = Math.max(Number(result.reward[0][1]), Number(result.reward[1][1]), Number(result.reward[2][1]))
-      // maxPriorityFeePerGas = web3.utils.toHex(maxReward.toString())//in wei
+      console.log(result)
+      var sum = 0
+      result.reward.forEach(element => {
+        sum += Number(element[0])
+      });
+      sum /= 10 
+      console.log('average: ', Math.round(sum))
+      maxPriorityFeePerGas = web3.utils.toHex(Math.round(sum).toString())//in wei 
     });
 
     // Option 2. Calculate maxPriorityFeePerGas using equation: (gasPrice - baseFee)
-    const gasPrice = await web3.eth.getGasPrice()
-    maxPriorityFeePerGas = web3.utils.toHex((gasPrice - baseFee).toString())
+    // const gasPrice = await web3.eth.getGasPrice()
+    // maxPriorityFeePerGas = web3.utils.toHex((gasPrice - baseFee).toString())
 
     //create value transfer transaction (EIP-1559) 
     const tx = {
@@ -121,8 +172,9 @@ async function sendTx(){
       from: signer.address,
       to:  signer.address,
       value: web3.utils.toHex(web3.utils.toWei("0", "ether")),
-      gas: 8000000,
-      maxPriorityFeePerGas,
+      gas: 21000,
+      maxPriorityFeePerGas, // 2.5 Gwei is a default 
+      // default maxFeePerGas = (2 * block.baseFeePerGas) + maxPriorityFeePerGas 
     }
 
     //Sign to the transaction
@@ -138,7 +190,7 @@ async function sendTx(){
     })
     const start = new Date().getTime()
     data.startTime = start 
-  
+
     await web3.eth
     .sendSignedTransaction(RLPEncodedTx) // Signed transaction data in HEX format 
     .on('receipt', function(receipt){
@@ -146,18 +198,26 @@ async function sendTx(){
       const end = new Date().getTime()
       data.endTime = end
       data.latency = end-start
-      console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.error}`) 
+      data.txFee = receipt.gasUsed * web3.utils.fromWei(receipt.effectiveGasPrice.toString())
+      PrevNonce = latestNonce
     })
+
+    // Calculate Transaction Fee and Get Tx Fee in USD 
+    var MATICtoUSD;
+    await CoinGeckoClient.simple.price({
+      ids: ["matic-network"],
+      vs_currencies: ["usd"]
+    }).then((response)=>{
+      MATICtoUSD = response.data["matic-network"]["usd"]
+    })
+    data.txFeeInUSD = data.txFee * MATICtoUSD 
+    console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.latestBlockSize},${data.numOfTxInLatestBlock},${data.error}`)
   } catch(err){
     console.log("failed to execute.", err.toString())
     data.error = err.toString()
-    console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.error}`)
+    console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.latestBlockSize},${data.numOfTxInLatestBlock},${data.error}`)
   }
-  try{
-    await uploadToS3(data)
-  } catch(err){
-    console.log('failed to s3.upload', err.toString())
-  }
+  await ping(data)
 }
 
 async function main(){

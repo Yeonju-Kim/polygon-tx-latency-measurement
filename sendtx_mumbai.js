@@ -111,9 +111,11 @@ async function sendTx(){
     }
 
     const startGetBlock = new Date().getTime()
-    await web3.eth.getBlock("latest").then((result)=>{
-      const endGetBlock = new Date().getTime()
-      data.pingTime = endGetBlock - startGetBlock
+    const latestBlockNumber = await web3.eth.getBlockNumber();
+    const endGetBlock = new Date().getTime()
+    data.pingTime = endGetBlock - startGetBlock
+
+    await web3.eth.getBlock(latestBlockNumber).then((result)=>{
       data.resourceUsedOfLatestBlock = result.gasUsed
       data.numOfTxInLatestBlock = result.transactions.length
     })

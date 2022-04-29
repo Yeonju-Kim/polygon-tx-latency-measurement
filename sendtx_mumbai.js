@@ -166,13 +166,15 @@ async function sendTx(){
     // Send signed transaction
     await web3.eth
     .sendSignedTransaction(RLPEncodedTx) // Signed transaction data in HEX format 
+    .on('sent', function(){
+      PrevNonce = latestNonce
+    })
     .on('receipt', function(receipt){
       data.txhash = receipt.transactionHash
       const end = new Date().getTime()
       data.endTime = end
       data.latency = end-start
       data.txFee = receipt.gasUsed * web3.utils.fromWei(receipt.effectiveGasPrice.toString())
-      PrevNonce = latestNonce
     })
 
     // Calculate Transaction Fee and Get Tx Fee in USD 

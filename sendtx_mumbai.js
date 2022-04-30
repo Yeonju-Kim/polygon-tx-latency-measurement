@@ -109,6 +109,9 @@ async function sendTx(){
       console.log(`Nonce ${latestNonce} = ${PrevNonce}`)
       return;
     }
+    else{
+      console.log(`Nonce ${latestNonce} != ${PrevNonce}`)
+    }
 
     const startGetBlock = new Date().getTime()
     const latestBlockNumber = await web3.eth.getBlockNumber();
@@ -141,6 +144,7 @@ async function sendTx(){
     //create value transfer transaction (EIP-1559) 
     const tx = {
       type: 2,
+      nonce: latestNonce,
       from: signer.address,
       to:  signer.address,
       value: web3.utils.toHex(web3.utils.toWei("0", "ether")),
@@ -163,6 +167,8 @@ async function sendTx(){
     const start = new Date().getTime()
     data.startTime = start 
 
+    const originalPrevNonce = PrevNonce
+
     // Send signed transaction
     await web3.eth
     .sendSignedTransaction(RLPEncodedTx) // Signed transaction data in HEX format 
@@ -175,6 +181,9 @@ async function sendTx(){
       data.endTime = end
       data.latency = end-start
       data.txFee = receipt.gasUsed * web3.utils.fromWei(receipt.effectiveGasPrice.toString())
+    })
+    .on('error', function(err){
+      PrevNonce = originalPrevNonce
     })
 
     // Calculate Transaction Fee and Get Tx Fee in USD 
